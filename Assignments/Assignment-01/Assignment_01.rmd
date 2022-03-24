@@ -1,0 +1,188 @@
+---
+title: "Data 622 Assignment 1"
+author: "Trishita Nath"
+date: "3/19/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Homework 1...New
+As the quiz that was part of the original content was discarded, here's a new assignment:
+Visit the following website and explore the range of sizes of this dataset (from 100 to 5 million records).
+https://eforexcel.com/wp/downloads-18-sample-csv-files-data-sets-for-testing-sales/ 
+Based on your computer's capabilities (memory, CPU), select 2 files you can handle (recommended one small, one large)
+Review the structure and content of the tables, and think which two machine learning algorithms presented so far could be used to analyze the data, and how can they be applied in the suggested environment of the datasets.
+Write a short essay explaining your selection. Then, select one of the 2 algorithms and explore how to analyze and predict an outcome based on the data available. This will be an exploratory exercise, so feel free to show errors and warnings that raise during the analysis. Test the code with both datasets selected and compare the results. Which result will you trust if you need to make a business decision? Do you think an analysis could be prone to errors when using too much data, or when using the least amount possible?
+
+## Data Exploration
+
+I will analyze the datasets containing 10000 and 50000 Sales Records
+
+
+```{r, message = FALSE, warning = FALSE, echo=FALSE}
+# loading libraries
+library(ggplot2)
+library(tidyverse)
+library(tidymodels)
+library(kableExtra)
+library(rpart.plot)
+library(ggcorrplot)
+library(caret)
+library(cvms)
+```
+
+### Loading Data
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Read both training and test datasets
+sales_10k <- read.csv('https://raw.githubusercontent.com/nathtrish334/Data-622/main/Assignments/Assignment-01/10000%20Sales%20Records.csv', stringsAsFactors = FALSE)
+sales_50k <- read.csv('https://raw.githubusercontent.com/nathtrish334/Data-622/main/Assignments/Assignment-01/50000%20Sales%20Records.csv', stringsAsFactors = FALSE)
+
+head(sales_10k)
+head(sales_50k)
+```
+
+### Data Analysis
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Column names
+colnames(sales_10k)
+colnames(sales_50k)
+
+# Data Type conversion
+# Convert date columns to date datatypes
+sales_10k[['Order.Date']] <- as.Date(sales_10k[['Order.Date']], "%m/%d/%Y")
+sales_10k[['Ship.Date']] <- as.Date(sales_10k[['Ship.Date']], "%m/%d/%Y")
+sales_10k[['Order.ID']] <- toString(sales_10k[['Order.ID']])
+sales_10k[['Order.Priority']] <- as.factor(sales_10k[['Order.Priority']])
+
+
+sales_50k[['Order.Date']] <- as.Date(sales_50k[['Order.Date']], "%m/%d/%Y")
+sales_50k[['Ship.Date']] <- as.Date(sales_50k[['Ship.Date']], "%m/%d/%Y")
+sales_50k[['Order.ID']] <- toString(sales_50k[['Order ID']])
+sales_50k[['Order.Priority']] <- as.factor(sales_50k[['Order.Priority']])
+
+# Summary of the data
+summary(sales_10k)
+summary(sales_50k)
+
+glimpse(sales_10k)
+glimpse(sales_50k)
+```
+
+### Machine Learning
+
+The two ML algorithms I will use are:
+
+* Decision tree
+* Linear regression algorithms
+
+For my case, the purpose of ML is for classification. ML can be used to determine if additional resources should be invested in improving IT infrastructure as well as determining which region and what time of year would be best for storage of perishable goods.
+
+#### Decision Tree
+
+For the sales transactions, the *Order.Priority* variable can have only four possible outcomes :C(Critical), H(High), M(Medium) or L(Low)
+
+##### Building the model
+
+*10K Sales Data Set*
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Splitting the 10k data 80/20
+set.seed(3822)
+
+training_sample_10k <-  createDataPartition(sales_10k$`Order.Priority`, p = 0.8, list=FALSE,times = 1)
+
+train_data_10k <- sales_10k[training_sample_10k,]
+test_data_10k <- sales_10k[-training_sample_10k,]
+
+decision_tree_specs_10k <- decision_tree() %>% 
+  # Set the engine and mode
+  set_engine("rpart") %>%
+  set_mode("classification")
+  
+# Train the model
+tree_model_10k <- decision_tree_specs_10k %>%
+  fit(formula = `Order.Priority` ~ `Region` + `Item.Type` + `Order.Priority` + `Total.Profit`,
+      data = train_data_10k)
+
+
+# Model info
+tree_model_10k
+```
+
+##### Model visualization
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+tree_model_10k$fit %>% rpart.plot(type = 4, extra = 2, roundint=FALSE)
+```
+
+*50K Sales Data Set*
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Splitting the 50k dataset 80/20
+set.seed(3822)
+
+training_sample_50k <- sales_50k$`Order.Priority` %>% 
+  createDataPartition(p = 0.8, list=FALSE, times = 1)
+
+train_data_50k <- sales_50k[training_sample_10k,]
+test_data_50k <- sales_50k[-training_sample_10k,]
+
+decision_tree_specs_50k <- decision_tree() %>% 
+  # Set the engine and mode
+  set_engine("rpart") %>%
+  set_mode("classification")
+  
+# Train the model
+tree_model_50k <- decision_tree_specs_50k %>%
+  fit(formula = `Order.Priority` ~ `Region` + `Item.Type` + `Order.Priority` + `Total.Profit`,
+      data = train_data_50k)
+
+
+# Model info
+tree_model_50k
+# Model Visualization
+tree_model_50k$fit %>% rpart.plot(type = 4, extra = 2, roundint=FALSE)
+```
+
+##### Model Perfomance
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+### 10K Data set
+# Predictions from the test data
+predictions_10k <- predict(tree_model_10k, new_data = test_data_10k)
+
+predictions_combined_10k <- predictions_10k %>% 
+  mutate(true_classification = test_data_10k$`Order.Priority`)
+
+# The Confusion matrix
+confusion_matrix_10k <- conf_mat(data = predictions_combined_10k,
+                            estimate = .pred_class,
+                            truth = true_classification)
+
+#confusion_matrix_10k
+autoplot(confusion_matrix_10k, type = "heatmap") +
+  scale_fill_gradient(low = "khaki", high = "indianred")
+
+
+### 50K Data set
+# Predictions from the test data
+predictions_50k <- predict(tree_model_50k, new_data = test_data_50k)
+
+predictions_combined_50k <- predictions_50k %>% 
+  mutate(true_classification = test_data_50k$`Order.Priority`)
+
+# The confusion matrix
+confusion_matrix_50k <- conf_mat(data = predictions_combined_50k,
+                            estimate = .pred_class,
+                            truth = true_classification)
+
+#confusion_matrix
+autoplot(confusion_matrix_50k, type = "heatmap") +
+  scale_fill_gradient(low = "slategray", high = "springgreen")
+
+```
