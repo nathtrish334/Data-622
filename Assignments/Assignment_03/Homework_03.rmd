@@ -1,0 +1,191 @@
+---
+title: 'Data 622 Homework #2'
+author: "Trishita Nath"
+date: "4/23/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Homework #2
+
+Perform an analysis of the dataset used in Homework #2 using the SVM algorithm.Compare the results with the results from previous homework.
+Based on articles
+
+* (https://www.hindawi.com/journals/complexity/2021/5550344/)
+* (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8137961/)
+
+Search for academic content (at least 3 articles) that compare the use of decision trees vs SVMs in your current area of expertise.
+Which algorithm is recommended to get more accurate results? Is it better for classification or regression scenarios? Do you agree with the recommendations? Why?
+
+## Data Exploration
+
+In Homework #2 I used the loan dataset.
+
+
+```{r, message = FALSE, warning = FALSE, echo=FALSE}
+# loading libraries
+library(ggplot2)
+library(tidyverse)
+library(tidymodels)
+library(kableExtra)
+library(rpart.plot)
+library(ggcorrplot)
+library(caret)
+library(cvms)
+library(tidyr)
+library(dplyr)
+library(VIM)
+library(corrplot)
+library(purrr)
+library(scales)
+library(Hmisc)
+library(naniar)
+library(rattle)
+library(psych)
+library(mice)
+library(randomForest)
+library(caTools)
+library(class)
+library(rpart)
+library(ranger)
+library(e1071)
+```
+
+### Loading Data
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Reading the loan_data
+loan_data <- read.csv('https://raw.githubusercontent.com/nathtrish334/Data-622/main/Assignments/Assignment_02/loan_approval.csv', stringsAsFactors = FALSE)
+
+#Dimensions of the loan_data
+dim(loan_data)
+
+head(loan_data)%>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% 
+  scroll_box(width="100%",height="300px")
+```
+
+The target variable for analysis is the `Loan_Status`
+
+## Data Processing
+
+### Missing Values
+
+Below is the summary of the missing values per feature
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+## Counts of missing data per feature
+dataset_missing_counts <- data.frame(apply(loan_data, 2, function(x) length(which(is.na(x)))))
+dataset_missing_pct <- data.frame(apply(loan_data, 2,function(x) {sum(is.na(x)) / length(x) * 100}))
+
+dataset_missing_counts <- cbind(Feature = rownames(dataset_missing_counts), dataset_missing_counts, dataset_missing_pct)
+colnames(dataset_missing_counts) <- c('Feature','NA_Count','NA_Percentage')
+rownames(dataset_missing_counts) <- NULL
+
+#  A plot of missing value patterns using nanair package
+gg_miss_upset(loan_data)
+```
+
+### Imputing Data
+
+I will remove the `Loan_ID` variable, convert categorical variables into factors then impute the loan_data using the mice package following Random Forest method.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Remove 'Loan_ID' then convert variables into factors
+loan_data <- loan_data %>%
+  select(-'Loan_ID') %>%
+  mutate(
+    Gender = as.factor(Gender),
+    Married = as.factor(Married),
+    Dependents = as.factor(Dependents),
+    Education = as.factor(Education),
+    Self_Employed = as.factor(Self_Employed),
+    Credit_History = as.factor(Credit_History),
+    Property_Area = as.factor(Property_Area),
+    Loan_Status = as.factor(Loan_Status)
+  )
+
+#imputate by using the random forest method
+init <- mice(loan_data, maxit = 0)
+predM <- init$predictorMatrix
+set.seed(123)
+imputed <- mice(loan_data, method = 'rf', predictorMatrix = predM, m=5)
+
+loan_data <- complete(imputed)
+#summary(loan_data)
+summary(loan_data)%>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(width="100%",height="400px")
+
+```
+
+## SVM Model Building
+
+### Data Splitting
+
+I will split the data into training and testing datasets in the ratio 80:20
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+sample = sample.split(loan_data$Loan_Status, SplitRatio = 0.8)
+train = subset(loan_data, sample == TRUE)
+test = subset(loan_data, sample == FALSE)
+
+
+train_factored <- train %>%
+  
+  mutate(
+    Gender = as.factor(Gender),
+    Married = as.factor(Married),
+    Dependents = as.factor(Dependents),
+    Education = as.factor(Education),
+    Self_Employed = as.factor(Self_Employed),
+    Credit_History = as.factor(Credit_History),
+    Property_Area = as.factor(Property_Area),
+    Loan_Status = as.factor(Loan_Status))
+
+test_factored <- test %>%
+  
+  mutate(
+    Gender = as.factor(Gender),
+    Married = as.factor(Married),
+    Dependents = as.factor(Dependents),
+    Education = as.factor(Education),
+    Self_Employed = as.factor(Self_Employed),
+    Credit_History = as.factor(Credit_History),
+    Property_Area = as.factor(Property_Area),
+    Loan_Status = as.factor(Loan_Status))
+
+```
+
+### Modelling
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+svm_model <- svm(Loan_Status ~ ., data = train_factored, kernel="linear", scale=FALSE)
+svm_model
+```
+
+### Prediction
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+svm_predict <- predict(svm_model, test_factored)
+#confusionMatrix(predict(svm_model,type="class"), test_factored$Loan_Status)
+confusionMatrix(svm_predict, test_factored$Loan_Status)
+```
+
+## Conclusion
+
+In this case the accuracy of the SV model is lower than that of the decision tree model.
+
+## Comparison of Decision Trees and SVMs
+
+#### Articles
+
+* Medical decision-making based on the exploration of a personalized medicine dataset
+[Link](https://www.sciencedirect.com/science/article/pii/S2352914821000514)
+
+* A Comparison of Support Vector Machine and Decision Tree Classifications Using Satellite Data of Langkawi Island. [Link](https://scialert.net/fulltext/?doi=itj.2009.64.70)
+
+* Comparing Support Vector Machines and Decision Trees for Text Classification
+[Link](https://www.codementor.io/blog/text-classification-6mmol0q8oj)
+
+The characteristics and quality of aare key in the selection of a modelling algorithm. The target variable is also key,whether it is categorical or continous. Decision trees perform better with categorical data and these algorithms deal with colinearity better than SVM modelling. In terms of computational resources, SVM consumes more resources.In terms of RMSE. SVM performs better.
