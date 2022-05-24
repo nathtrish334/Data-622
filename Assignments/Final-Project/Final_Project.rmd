@@ -1,0 +1,477 @@
+---
+title: "Data 622 Final Project"
+author: "Trishita Nath"
+date: "5/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+You get to decide which dataset you want to work on. The data set must be different from the ones used in previous homeworks You can work on a problem from your job, or something you are interested in. You may also obtain a dataset from sites such as Kaggle, Data.Gov, Census Bureau, USGS or other open data portals. 
+
+Select one of the methodologies studied in weeks 1-10, and one methodology from weeks 11-15 to apply in the new dataset selected. To complete this task:
+
+* describe the problem you are trying to solve.
+* describe your datasets and what you did to prepare the data for analysis. 
+* methodologies you used for analyzing the data
+* what's the purpose of the analysis performed
+* make your conclusions from your analysis. Please be sure to address the business impact (it could be of any domain) of your solution.
+
+```{r, message = FALSE, warning = FALSE, echo=FALSE}
+# loading libraries
+library(ggplot2)
+library(tidyverse)
+library(psych)
+library(kableExtra)
+library(mice)
+library(e1071)
+library(caret)
+library(tidymodels)
+library(dplyr)
+library(rpart.plot)
+library(rpart)
+library(randomForest)
+library(MASS)
+library(ranger)
+library(rpart.plot)
+library(ggcorrplot)
+library(caret)
+library(cvms)
+library(tidyr)
+library(dplyr)
+library(VIM)
+library(corrplot)
+library(purrr)
+library(scales)
+library(Hmisc)
+library(naniar)
+library(rattle)
+library(caTools)
+library(class)
+library(e1071)
+library(kknn)
+```
+
+# Introduction
+
+I will utilize a dataset *HR Analytics: Job Changes of Data Scientists* from Kaggle. This dataset aims to determine which data scientists will be looking for a job change. 
+
+## Dataset Features
+
+Features
+
+* enrollee_id : Unique ID for candidate
+* city: City code
+* city_ development _index : Developement index of the city (scaled)
+* gender: Gender of candidate
+* relevent_experience: Relevant experience of candidate
+* enrolled_university: Type of University course enrolled if any
+* education_level: Education level of candidate
+* major_discipline :Education major discipline of candidate
+* experience: Candidate total experience in years
+* company_size: No of employees in current employer's company
+* company_type : Type of current employer
+* lastnewjob: Difference in years between previous job and current job
+* training_hours: training hours completed
+* target: 0 – Not looking for job change, 1 – Looking for a job change
+
+The target variable is labeled *target* and can either be 0 indicating the individual is not looking for a job change or 1 indicating the individual is looking for a job change.
+
+## Methodology of Analysis
+
+I will transform the given dataset, perform expolatory analysis as well as clustering so as to get understand the data and build models to determine which model is most accurate in predicting which data scientists are looking to leave their jobs.
+
+I will build the following models
+
+i) Decision Tree
+ii) Random Forest
+iii) K-Nearest Neighbors
+iv) SVM
+
+
+## Loading Data
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# Reading the loan_data
+train_df <- read.csv('https://raw.githubusercontent.com/nathtrish334/Data-622/main/Assignments/Final-Project/aug_train.csv', stringsAsFactors = FALSE)
+test_df <- read.csv('https://raw.githubusercontent.com/nathtrish334/Data-622/main/Assignments/Final-Project/aug_test.csv', stringsAsFactors = FALSE)
+
+#Dimensions of the loan_data
+dim(train_df)
+
+head(train_df)%>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% 
+  scroll_box(width="100%",height="300px")
+```
+
+## Data Exploration
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+str(train_df)
+```
+
+There is a mix of numerical and categorical data. Additionally, our target variable target should also be a factor. I will convert categorical column types, as well as the target variable, to factor. In addition, *enrollee_id* is only used for identification, hence I will not use it during modeling.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+train_df <- train_df %>% 
+  mutate_if(is.character, as.factor) %>%
+  mutate(target = as.factor(target))
+```
+
+### Numerical Features
+
+There are two numerical features, `city_development_index` and `training_hours`. Below is a visualization of the relationship of each of these variables with `target`.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(train_df) +
+  aes(x = target, y = city_development_index) + 
+   geom_boxplot(color = 'magenta', outlier.color = 'black', outlier.alpha = 0.35) +
+    labs(title = 'City Development Index vs Target', y = 'City Development Index', x= 'Target') +
+  theme_minimal() + 
+  theme(
+    plot.title = element_text(hjust = 0.45),
+    panel.grid.major.y =  element_line(color = "grey", linetype = "dashed"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.ticks.x = element_line(color = "grey")
+  )
+  
+```
+
+From the boxplots above, those who are not looking to leave their jobs, majorly live in cities with a high city development index. From the boxplot on the right, the median value is much lower and the interquartile range is much wider. This implies that `city_development_index` has a strong relationship with `target`.
+
+```{r echo=FALSE}
+ggplot(train_df) +
+  aes(x = target, y = training_hours) + 
+   geom_boxplot(color = 'orange', outlier.color = 'navy', outlier.alpha = 0.35) +
+    labs(title = 'Training Hours vs Target', y = 'Training Hours', x= 'Target') +
+  theme_minimal() + 
+  theme(
+    plot.title = element_text(hjust = 0.45),
+    panel.grid.major.y =  element_line(color = "grey", linetype = "dashed"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.ticks.x = element_line(color = "grey")
+  )
+  
+```
+
+From the boxplots above, there does not exist significant relationship between this variable and `target`.
+
+
+
+
+### Categorical Features
+
+To explore the relationship between categorical variables and `target`, I will focus on the percentage of individuals who are looking for new jobs vs those who are not at each level of the factor. Differences between the percentages in each level, can imply the factor and its associated levels are predictive of `target`.
+
+```{r echo=FALSE, fig.height=40, fig.width=12, message=FALSE, warning=FALSE}
+viz_data <- na.omit(train_df)
+  train_names <- train_df %>% dplyr::select_if(is.factor)# %>% select(-Credit_History)
+  cat_names <- names(train_names)
+  myGlist <- vector('list', length(train_names))
+  names(myGlist) <- cat_names
+  
+   for (i in  cat_names) {  
+     
+myGlist[[i]] <-
+  
+ggplot(viz_data) +
+    aes_string(x = i, group = viz_data$target) + 
+    geom_bar(aes(y=..prop.., fill=factor(target),  stat= 'count'), position="dodge") +
+    scale_y_continuous(labels=scales::percent) +
+    geom_text(aes( label = scales::percent(round(..prop..,2)),
+                   y= ..prop.. ), stat= "count", vjust = -.5, size = 3) +
+    facet_grid(~target, scales = "free") +
+    scale_fill_manual("Target",values = c("#58BFFF", "#3300FF")) +
+   labs(title = paste0(i,' vs target'), y = 'Percent', x= '') +
+    theme(panel.background = element_blank(), 
+          legend.position="top")
+  }
+   
+  
+  myGlist <- within(myGlist, rm(target, city))
+  gridExtra::grid.arrange(grobs = myGlist, ncol =1)
+```
+
+From the charts above, there are very minor differences between the percentages for those who are looking to leave their jobs and those who are not in almost all of our categorical features. The following are the significant differences:
+
+-   `enrolled_university`: Those who are enrolled in a full time course are twice as likely to be looking for a new position.
+-   `experience`: Those with more than 20 years of experience are twice as likely to stay at their current job.
+
+I excluded a the view of `city` in the above graph due to the number of distinct categories it contains.
+
+```{r echo=FALSE, fig.height=17, fig.width=15, message=FALSE, warning=FALSE}
+ggplot(viz_data) +
+    aes(x = city, group = target) + 
+    geom_bar(aes(y=..prop.., fill=factor(target),  stat= 'count'), position="dodge") +
+    scale_y_continuous(labels=scales::percent) +
+    geom_text(aes( label = scales::percent(round(..prop..,2)),
+                   y= ..prop.. ), stat= "count",  size = 3, angle = 90, hjust = -.1) +
+    facet_wrap(~target,  dir = 'v') +
+    scale_fill_manual("Target",values = c("#58BFFF", "#3300FF")) +
+   labs(title = 'city vs target', y = 'Percent', x= '') +
+    theme(panel.background = element_blank(), 
+          legend.position="top", 
+          axis.text.x = element_text(angle = 90, vjust = -.05)
+          )
+    
+  
+```
+
+Thus far it appears that the following categorical variables that hold insignificant predictive power:
+
+-   `gender`
+-   `relevant_experience`
+-   `education_level`
+-   `major_discipline`
+-   `company_size`
+-   `company_type`
+-   `last_new_job`
+
+### Missing Data
+
+Visualization of missing values.
+
+```{r, message = FALSE, warning = FALSE, echo=FALSE}
+## Counts of missing data per feature
+dataset_missing_counts <- data.frame(apply(train_df, 2, function(x) length(which(is.na(x)))))
+dataset_missing_pct <- data.frame(apply(train_df, 2,function(x) {sum(is.na(x)) / length(x) * 100}))
+
+dataset_missing_counts <- cbind(Feature = rownames(dataset_missing_counts), dataset_missing_counts, dataset_missing_pct)
+colnames(dataset_missing_counts) <- c('Feature','NA_Count','NA_Percentage')
+rownames(dataset_missing_counts) <- NULL
+
+
+#  A plot of missing value patterns
+ggplot(dataset_missing_counts, aes(x = NA_Count, y = reorder(Feature, NA_Count))) + 
+  geom_bar(stat = 'identity', fill = 'steelblue') +
+  geom_label(aes(label = NA_Count)) +
+  labs(title = 'Missing Counts') +
+  theme(plot.title = element_text(hjust = 0.5), axis.title.y = element_blank(), axis.title.x = element_blank())
+
+visdat::vis_miss(train_df, sort_miss = TRUE)
+```
+
+From the above plots, the dataset has no missing values.
+I am going to drop `company_type`, `company_size`, `gender`, and `major_discipline` from the dataset since these factors hold little to no predictive power.
+
+```{r, message = FALSE, warning = FALSE, echo=FALSE}
+train_df <- train_df %>%
+  dplyr::select(-company_type, -company_size, -gender, -major_discipline, -enrollee_id)
+```
+
+
+## Modelling
+
+### Decision Tree
+
+```{r, message = FALSE, warning = FALSE, echo=FALSE}
+set.seed(42)
+df_split <- train_df %>% initial_split(strata = 'target')
+df_train <- training(df_split)
+df_test <- testing(df_split)
+set.seed(43)
+df_folds <- bootstraps(df_train, strata = target, times=10)
+```
+
+The training set is imbalanced having around 14k 0s and around 5k 1s. This will cause our model to over fit on the class that is over represented. To cater for this I will down sample the target so that it is 50-50.
+
+```{r}
+df_train_rec <- recipe(target ~ ., data=df_train) %>%
+  step_downsample(target)
+smp <- df_train_rec %>% 
+  prep() %>% 
+  bake(new_data=NULL)
+table(smp$target)
+```
+
+Below I am instantiating the decision tree and fitting it with the training set:
+
+```{r, message=F, warning=FALSE}
+dt <- rpart(target~., data=df_train)
+```
+
+I then use the trained model on the test set to evaluate it's performance.
+
+```{r }
+dt.predictions <- predict(dt, df_test, type='class')
+dt_df = data.frame(y_true=df_test$target, y_pred=dt.predictions)
+dt_cm <- confusionMatrix(table(dt_df$y_true, dt_df$y_pred), positive='1')
+dt_cm
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+tn <- dt_cm$table[1]
+tp <- dt_cm$table[4]
+fn <- dt_cm$table[3]
+fp <- dt_cm$table[2]
+fourfoldplot(dt_cm$table)
+```
+
+From the confusion matrix the model correctly predicted No `r tn` times and Yes `r tp` times giving an overall accuracy of 77.54%. Out of the 873 data scientists who were looking to leave their job, the model only correctly identified 496 of them and also included nearly 700 false positives. This model isn't very useful in reality.
+
+### KNN
+
+I will center and scale all predictors then remove any predictors that have near-zero variance so that there are no overlapping predictors.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knn_data <- train_df %>%
+  dplyr::select(city_development_index, training_hours, experience, last_new_job) %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate(experience = replace(experience, experience == ">20", 20)) %>%
+  mutate(experience = replace(experience, experience == "<1", 0)) %>%
+  mutate(last_new_job = replace(last_new_job, last_new_job == ">4", 4)) %>%
+  mutate(last_new_job = replace(last_new_job, last_new_job == "never", 0)) %>%
+  mutate_if(is.character, as.numeric)
+knn_trans <- preProcess(knn_data,
+                        method = c("center", "scale"))
+knn_transformed_feat <- predict(knn_trans, knn_data)
+nzv <- nearZeroVar(knn_transformed_feat, saveMetrics = TRUE)
+nzv[nzv[,"nzv"] == TRUE,]
+```
+
+None of the predictors have near-zero variance.
+
+I am building the model by splitting data into training and testing sets then removing the `enrollee_id`.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knn_processed <- cbind(train_df[9], knn_transformed_feat)
+knn_processed <- knn_processed[complete.cases(knn_processed),]
+set.seed(54321)
+train_ind <- sample(seq_len(nrow(knn_processed)),
+                    size = floor(0.75*nrow(knn_processed)))
+knn_train <- knn_processed[train_ind,]
+knn_test <- knn_processed[-train_ind,]
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+kknn_func <- function(train_x, train_y, test_x, test_y){
+  results_df <- data.frame(matrix(nrow = 0, ncol = 6))
+  
+  weights <- c("rectangular","triangular")
+  
+  for(d in 1:2){
+    print(d)
+    for(w in weights){
+      print(w)
+      for(i in 2:30){
+        kknnModel <- kknn(train_y ~ .,
+                          train_x,
+                          test_x,
+                          k = i,
+                          distance = d,
+                          kernel = w)
+        
+        cM <- table(test_y, fitted(kknnModel))
+        accuracy <- (cM[1]+cM[4])/(cM[1]+cM[2]+cM[3]+cM[4])
+        sensitivity <- (cM[4])/(cM[4]+cM[2])
+        specificity <- (cM[1])/(cM[1]+cM[3])
+        results_df <- rbind(results_df,c(i,
+                                         accuracy,
+                                         specificity,
+                                         sensitivity,
+                                         w,
+                                         d))
+      }
+    }
+  }
+  colnames(results_df) <- c("k",
+                            "Accuracy",
+                            "Specificity",
+                            "Sensitivity",
+                            "Weight",
+                            "Distance")
+  results_df[,1] <- as.integer(results_df[,1])
+  results_df[,2] <- as.numeric(results_df[,2])
+  results_df[,3] <- as.numeric(results_df[,3])
+  results_df[,4] <- as.numeric(results_df[,4])
+  results_df[,6] <- as.integer(results_df[,6])
+  
+  return(results_df)
+}
+kknn_results <- kknn_func(knn_train[,-1],
+                          knn_train[,1],
+                          knn_test[,-1],
+                          knn_test[,1])
+acc_plot_data <- kknn_results[which(kknn_results$Distance == 5),]
+ggplot(data = kknn_results, aes(x = k, y = Accuracy, color = Weight)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "KKNN: k distribution",
+       x = "k",
+       y = "Accuracy")
+```
+
+
+The model found that a k value of around 27 with a distance of 2 and a weighting function of rectangular produced the best model with an accuracy of 77.2%.
+
+This value of k is a rather large value for k, implying that the groups are spread out and hence KNN may not be the best method for predicting the target variable. Sensitivity of this model is also very low.
+
+
+### Support Vector Machine
+
+I am going to train an SVM to find the dividing plane between those not looking for a job change and those that are looking for a job change based on the features we have.
+
+The trained dataset `smp` from the decision tree model is fit to an SVM
+
+```{r include=FALSE}
+set.seed(42)
+svm_model = svm(target ~ ., data=smp) 
+summary(svm_model)
+```
+
+The base model consists of 4993 support vectors with 2511 assigned to label 0 (not looking for a job change) and 2482 to label 1 (looking for a job change).
+
+I will tune the SVM with the training set to find the best values for gamma and cost. I will do this with 10 fold cross validation.
+
+```{r eval=FALSE, include=FALSE}
+set.seed(42)
+x <- subset(smp, select=-target)
+y <- subset(smp, select=target)
+svm_tune <- tune(svm, train.x=x, train.y=y,kernel="radial", ranges=list(cost=10^(-1:2), gamma=c(.25,.5,1)))
+summary(svm_tune)
+svm_best <- svm_tune$best.model
+```
+
+The best parameters are gamma = 0.5 and cost = 1.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ set.seed(42)
+ svm_model = svm(target~., data=smp, cost=1, gamma=0.5, kernel='radial', probability=TRUE)
+ summary(svm_model)
+ svm_best <- svm_model
+```
+
+I can now run this model against the test set:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(42)
+x <-  subset(df_test, select=-target) 
+y <- subset(df_test, select=target) 
+  
+y_test = predict(svm_best, x )
+confusionMatrix(df_test[,'target'], y_test, positive='1')
+```
+
+This model is most accurate at predicting someone who will not change job with 2692 true negatives. There are also 433 false positives when the model predicted that those individuals would change job when they didn't and 904 false negatives where the model predicted those individual will not change job when they did.
+
+### Model Comparison
+
+The accuracies of these models may seem satisfactory. However, accuracy is not of focus in this case, rather we focus on models' sensitivity. Sensitivity tells how many of the data scientists looking to leave their job were correctly predicted by our model. Looking at sensitivity, none of the models is recommended.
+
+In my opinon, one reason why the modeling failed is because of few features in the dataset that predictive power. 
+
+
+## Conclusion
+
+From my analysis and modeling of the given dataset, there is no direct way of predicting data scientists that are planning to leave their jobs. I recommend adding more features to the dataset that offer higher prediction. 
+
+
+
